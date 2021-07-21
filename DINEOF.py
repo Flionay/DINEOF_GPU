@@ -1,7 +1,7 @@
 '''
 Author: your name
 Date: 2021-07-21 09:31:50
-LastEditTime: 2021-07-21 19:18:10
+LastEditTime: 2021-07-21 19:39:42
 LastEditors: Please set LastEditors
 Description: In User Settings Edit
 FilePath: /DINEOF_GPU/DINEOF.py
@@ -28,7 +28,7 @@ def load_data():
                 mask[la,lo] = 0 
     return data,mask
 
-def dineof_gpu(data,mask,Max_EOF=3,rms_delta = 0.1):
+def dineof_gpu(data,mask,Max_EOF=3,rms_delta = 0.001):
     '''
     input:  data (lat,lon,time) 
             mask (lat,lon)
@@ -43,7 +43,8 @@ def dineof_gpu(data,mask,Max_EOF=3,rms_delta = 0.1):
     
     # 交叉验证索引
     val_idx_random = np.random.choice(index,int(0.1*len(index)))
-    val_idx = np.concatenate([val_idx_random,nan_idx[0]])
+    # val_idx = np.concatenate([val_idx_random,nan_idx[0]])
+    val_idx = val_idx_random
     
     # 将缺失值替换为 0 
     x[np.isnan(x)]=0 
@@ -53,25 +54,26 @@ def dineof_gpu(data,mask,Max_EOF=3,rms_delta = 0.1):
     RMS = []
     rms_prev = np.inf
     perform = []
-    rms_now = 0
-    while((rms_prev - rms_now > rms_delta)&(eof_n<=Max_EOF)):
+    rms_now = np.inf
+    while((rms_prev - rms_now > rms_delta)|(eof_n<=Max_EOF)):
         rms_prev = rms_now
         
-        xx = torch.from_numpy(x).cuda()
+        xx = torch.from_numpy(x).cuda(1)
         U,S,V = torch.svd(xx)
         Reci = torch.mm(torch.mul(unsqueeze(U[:,eof_n],dim=1),S[eof_n]),unsqueeze(V[:,eof_n],dim=1).T)
-        Reci = Reci.cpu()
+        Reci = Reci.cpu().numpy()
         # 需要释放GPU
         torch.cuda.empty_cache()
-        rms_now = np.sqrt(np.nanmean(Reci.reshape(-1)[val_idx]-x[val_idx])^2)
+        rms_now = np.sqrt(np.nanmean(np.power(Reci.reshape(-1)[val_idx]-x.reshape(-1)[val_idx],2)))
         RMS.append(rms_now)
         perform.append((eof_n,rms_now))
         print((eof_n,rms_now))
         
         if(rms_now==min(RMS)):
             data[mask==1]  = Reci
-            print("done")
+            print("do it again")
             perform_best = (eof_n,rms_now)
+        eof_n+=1
     return data,perform,perform_best
 
 if __name__=='__main__':
