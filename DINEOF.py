@@ -1,7 +1,7 @@
 '''
 Author: your name
 Date: 2021-07-21 09:31:50
-LastEditTime: 2021-07-21 19:39:42
+LastEditTime: 2021-07-26 10:49:08
 LastEditors: Please set LastEditors
 Description: In User Settings Edit
 FilePath: /DINEOF_GPU/DINEOF.py
@@ -54,8 +54,26 @@ def dineof_gpu(data,mask,Max_EOF=3,rms_delta = 0.001):
     RMS = []
     rms_prev = np.inf
     perform = []
-    rms_now = np.inf
-    while((rms_prev - rms_now > rms_delta)|(eof_n<=Max_EOF)):
+    rms_now = 0
+    while((rms_prev - rms_now > rms_delta)&(eof_n<=Max_EOF)):
+
+        while(rms_prev-rms_now>rms_delta):
+            rms_prev = rms_now
+            xx = torch.from_numpy(x).cuda(1)
+            U,S,V = torch.svd(xx)
+            Reci = torch.mm(torch.mul(unsqueeze(U[:,eof_n],dim=1),S[eof_n]),unsqueeze(V[:,eof_n],dim=1).T)
+            Reci = Reci.cpu().numpy()
+            # 需要释放GPU
+            torch.cuda.empty_cache()
+            rms_now = np.sqrt(np.nanmean(np.power(Reci.reshape(-1)[val_idx]-x.reshape(-1)[val_idx],2)))
+            RMS.append(rms_now)
+            perform.append((eof_n,rms_now))
+            print((eof_n,rms_now))
+            if(rms_now==min(RMS)):
+                data[mask==1]  = Reci
+                print("do it again")
+                perform_best = (eof_n,rms_now)
+
         rms_prev = rms_now
         
         xx = torch.from_numpy(x).cuda(1)
@@ -78,4 +96,5 @@ def dineof_gpu(data,mask,Max_EOF=3,rms_delta = 0.001):
 
 if __name__=='__main__':
     data,mask = load_data()
-    data,perform,perform_best = dineof_gpu(data,mask)
+    data,perform,perform_best= dineof_gpu(data,mask,Max_EOF=8,rms_delta = 0.00001)
+    np.save('filled.npy',data,)
